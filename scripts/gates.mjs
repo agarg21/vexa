@@ -10,7 +10,10 @@
  */
 import { readdirSync, existsSync, readFileSync, writeFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { execSync, execFileSync, spawnSync } from "node:child_process";
+import { execSync, execFileSync, spawnSync, exec } from "node:child_process";
+import { availableParallelism } from "node:os";
+import { promisify } from "node:util";
+const execAsync = promisify(exec);
 // execFileSync, not execSync, wherever a command carries a PATH we computed (ROOT is
 // process.cwd(), so every such path is an environment value): an argv array is handed to
 // execve directly, so there is no shell to reinterpret a space, a quote or a `;` in the
@@ -354,20 +357,27 @@ function gateContractVersion() {
 // result, run the WHOLE population every time, then fail once naming every red package — so one
 // `pnpm gate:python` run shows the real blast radius instead of red → fix → push → discover the
 // next one.
-function gatePython() {
+async function gatePython() {
   const pkgs = walkDirs().filter((d) => existsSync(join(d, "pyproject.toml")) && existsSync(join(d, "tests")));
   if (!pkgs.length) { console.log("  ✓ gate:python — no Python packages yet (green-on-empty)"); return true; }
+  // Packages are independent (own pyproject + venv): run them with bounded concurrency, one per CPU
+  // (GATE_PYTHON_JOBS overrides; 1 = serial). Every package still runs; failures are reported together.
+  const jobs = Math.max(1, Number(process.env.GATE_PYTHON_JOBS) || availableParallelism());
   const failures = [];
-  for (const d of pkgs) {
-    const t0 = Date.now(); // fork-only timing print (measurement baseline)
-    try {
-      const out = execSync("uv run pytest -q", { cwd: d, stdio: "pipe" }).toString().trim().split("\n").pop();
-      console.log(`    ${rel(d)}: ${((Date.now() - t0) / 1000).toFixed(1)}s · ${out}`);
+  const queue = [...pkgs];
+  const worker = async () => {
+    for (let d = queue.shift(); d; d = queue.shift()) {
+      const t0 = Date.now();
+      const secs = () => ((Date.now() - t0) / 1000).toFixed(1);
+      try {
+        const { stdout } = await execAsync("uv run pytest -q", { cwd: d, maxBuffer: 64 * 1024 * 1024 });
+        console.log(`    ${rel(d)}: ${secs()}s · ${stdout.trim().split("\n").pop()}`);
+      } catch (e) { failures.push(`pytest ${rel(d)}:\n${errText(e)}`); console.log(`    ${rel(d)}: ${secs()}s · FAILED`); }
     }
-    catch (e) { failures.push(`pytest ${rel(d)}:\n${errText(e)}`); console.log(`    ${rel(d)}: ${((Date.now() - t0) / 1000).toFixed(1)}s · FAILED`); }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(jobs, pkgs.length) }, worker));
   if (failures.length) return fail([`${failures.length}/${pkgs.length} package(s) failed pytest:`, ...failures]);
-  console.log(`  ✓ gate:python — ${pkgs.length} package(s) · pytest green`);
+  console.log(`  ✓ gate:python — ${pkgs.length} package(s) · pytest green (${jobs} in parallel)`);
   return true;
 }
 
@@ -2010,6 +2020,8 @@ if (which === "seal-arch") {
 const run = which === "all" ? Object.keys(GATES) : [which];
 if (run.some((g) => !GATES[g])) { console.error(`unknown gate: ${which}`); process.exit(2); }
 console.log(`\n▶ gates: ${run.join(", ")}`);
-const ok = run.map((g) => GATES[g]()).every(Boolean);
+const results = [];
+for (const g of run) results.push(await GATES[g]()); // gates may be async (gate:python)
+const ok = results.every(Boolean);
 console.log(ok ? "\n✅ gates green\n" : "\n❌ gates failed\n");
 process.exit(ok ? 0 : 1);
