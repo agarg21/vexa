@@ -359,8 +359,12 @@ function gatePython() {
   if (!pkgs.length) { console.log("  ✓ gate:python — no Python packages yet (green-on-empty)"); return true; }
   const failures = [];
   for (const d of pkgs) {
-    try { execSync("uv run pytest -q", { cwd: d, stdio: "pipe" }); }
-    catch (e) { failures.push(`pytest ${rel(d)}:\n${errText(e)}`); }
+    const t0 = Date.now(); // fork-only timing print (measurement baseline)
+    try {
+      const out = execSync("uv run pytest -q", { cwd: d, stdio: "pipe" }).toString().trim().split("\n").pop();
+      console.log(`    ${rel(d)}: ${((Date.now() - t0) / 1000).toFixed(1)}s · ${out}`);
+    }
+    catch (e) { failures.push(`pytest ${rel(d)}:\n${errText(e)}`); console.log(`    ${rel(d)}: ${((Date.now() - t0) / 1000).toFixed(1)}s · FAILED`); }
   }
   if (failures.length) return fail([`${failures.length}/${pkgs.length} package(s) failed pytest:`, ...failures]);
   console.log(`  ✓ gate:python — ${pkgs.length} package(s) · pytest green`);
