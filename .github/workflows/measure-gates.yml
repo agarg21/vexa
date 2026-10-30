@@ -1,4 +1,4 @@
-# fork-only measurement harness: gates.yml `python` job, dispatch only
+# fork-only probe: core/agent alone, serial with --durations, then pytest-xdist -n 4 (dispatch only)
 name: measure-gates
 
 on:
@@ -9,16 +9,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with: { node-version: 22, cache: pnpm }
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-      - run: pnpm install --frozen-lockfile
-        env: { ONNXRUNTIME_NODE_INSTALL: skip }
-      # the runtime docker-backend lifecycle test creates containers via the docker socket API,
-      # which (unlike `docker run`) does NOT implicit-pull — pre-pull its fixture image
-      - run: docker pull alpine
-      - run: pnpm gate:python
-        # fork-only diagnostics (both arms): dump stacks of any test stuck > 5 min
-        env: { PYTEST_ADDOPTS: "-o faulthandler_timeout=300", GATE_PYTHON_PKG_TIMEOUT_MS: "2400000" }
+      - run: nproc; uv sync --frozen
+        working-directory: core/agent
+      - name: serial with durations
+        working-directory: core/agent
+        run: uv run pytest -q --durations=40 -o faulthandler_timeout=300
+        continue-on-error: true
+      - name: xdist -n 4
+        working-directory: core/agent
+        run: uv run --with pytest-xdist pytest -q -n 4 -o faulthandler_timeout=300
+        continue-on-error: true
     timeout-minutes: 75
