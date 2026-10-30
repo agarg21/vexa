@@ -1,4 +1,4 @@
-# fork-only probe: core/agent alone, serial with --durations, then pytest-xdist -n 4 (dispatch only)
+# fork-only probe 2: core/agent with pytest-xdist -n 4, fixed hash seed (probe 1 failed: different param order per worker)
 name: measure-gates
 
 on:
@@ -10,14 +10,8 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-      - run: nproc; uv sync --frozen
+      - name: xdist -n 4 (PYTHONHASHSEED=0)
         working-directory: core/agent
-      - name: serial with durations
-        working-directory: core/agent
-        run: uv run pytest -q --durations=40 -o faulthandler_timeout=300
-        continue-on-error: true
-      - name: xdist -n 4
-        working-directory: core/agent
-        run: uv run --with pytest-xdist pytest -q -n 4 -o faulthandler_timeout=300
-        continue-on-error: true
-    timeout-minutes: 75
+        env: { PYTHONHASHSEED: "0" }
+        run: uv run --with pytest-xdist pytest -q -n 4 --durations=15 -o faulthandler_timeout=300
+    timeout-minutes: 60
