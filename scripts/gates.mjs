@@ -370,7 +370,10 @@ async function gatePython() {
       const t0 = Date.now();
       const secs = () => ((Date.now() - t0) / 1000).toFixed(1);
       try {
-        const { stdout } = await execAsync("uv run pytest -q", { cwd: d, maxBuffer: 64 * 1024 * 1024 });
+        // like execSync: stdin closed (EOF), so nothing in a suite can block on an open pipe
+        const p = execAsync("uv run pytest -q", { cwd: d, maxBuffer: 64 * 1024 * 1024 });
+        p.child.stdin?.end();
+        const { stdout } = await p;
         console.log(`    ${rel(d)}: ${secs()}s · ${stdout.trim().split("\n").pop()}`);
       } catch (e) { failures.push(`pytest ${rel(d)}:\n${errText(e)}`); console.log(`    ${rel(d)}: ${secs()}s · FAILED`); }
     }
