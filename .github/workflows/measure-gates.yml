@@ -20,5 +20,5 @@ jobs:
       - run: docker pull alpine
       - run: pnpm gate:python
         # fork-only diagnostics (both arms): dump stacks of any test stuck > 5 min
-        env: { PYTEST_ADDOPTS: "-o faulthandler_timeout=300" }
+        env: { PYTEST_ADDOPTS: "-o faulthandler_timeout=300", GATE_PYTHON_PKG_TIMEOUT_MS: "2400000" }
     timeout-minutes: 75

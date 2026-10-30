@@ -371,7 +371,7 @@ async function gatePython() {
       const secs = () => ((Date.now() - t0) / 1000).toFixed(1);
       try {
         // like execSync: stdin closed (EOF), so nothing in a suite can block on an open pipe
-        const p = execAsync("uv run pytest -q", { cwd: d, maxBuffer: 64 * 1024 * 1024 });
+        const p = execAsync("uv run pytest -q", { cwd: d, maxBuffer: 64 * 1024 * 1024, ...(process.env.GATE_PYTHON_PKG_TIMEOUT_MS ? { timeout: Number(process.env.GATE_PYTHON_PKG_TIMEOUT_MS) } : {}) });
         p.child.stdin?.end();
         const { stdout } = await p;
         console.log(`    ${rel(d)}: ${secs()}s · ${stdout.trim().split("\n").pop()}`);
